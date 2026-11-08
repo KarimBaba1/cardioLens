@@ -1,0 +1,59 @@
+{
+  "raw_rows": 4238,
+  "raw_columns": [
+    "male",
+    "age",
+    "education",
+    "currentSmoker",
+    "cigsPerDay",
+    "BPMeds",
+    "prevalentStroke",
+    "prevalentHyp",
+    "diabetes",
+    "totChol",
+    "sysBP",
+    "diaBP",
+    "BMI",
+    "heartRate",
+    "glucose",
+    "TenYearCHD"
+  ],
+  "duplicate_rows_dropped": 0,
+  "out_of_range_set_to_na": {},
+  "nonsmoker_with_cigs_fixed": 0,
+  "rows_after_cleaning": 4238,
+  "missing_per_column": {
+    "education": 105,
+    "cigsPerDay": 29,
+    "BPMeds": 53,
+    "totChol": 50,
+    "BMI": 19,
+    "heartRate": 1,
+    "glucose": 388
+  },
+  "rows_with_any_missing": 582,
+  "rows_missing_frs_inputs": 72,
+  "splits": {
+    "train": {
+      "rows": 2966,
+      "positives": 450,
+      "positive_rate": 0.1517
+    },
+    "val": {
+      "rows": 636,
+      "positives": 97,
+      "positive_rate": 0.1525
+    },
+    "test": {
+      "rows": 636,
+      "positives": 97,
+      "positive_rate": 0.1525
+    },
+    "llm_test_subset": {
+      "rows": 300,
+      "positives": 46,
+      "positive_rate": 0.1533
+    }
+  },
+  "seed": 42
+}
