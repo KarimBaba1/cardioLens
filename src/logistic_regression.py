@@ -1,6 +1,7 @@
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from preprocessing import load_split, FEATURES, TARGET, build_preprocessor
 from sklearn.pipeline import Pipeline
@@ -106,8 +107,14 @@ test_probabilities = model.predict_proba(
     test[FEATURES]
 )[:, 1]
 
-# Threshold 0.2 was selected based on validation F1-score
-selected_threshold = 0.2
+# Threshold chosen automatically: the one with the best validation F1-score
+candidate_thresholds = [round(t, 2) for t in np.arange(0.05, 0.95, 0.05)]
+val_f1 = [
+    f1_score(val[TARGET], (probabilities >= t).astype(int), zero_division=0)
+    for t in candidate_thresholds
+]
+selected_threshold = candidate_thresholds[int(np.argmax(val_f1))]
+print("Selected threshold (best validation F1):", selected_threshold)
 
 test_predictions = (
     test_probabilities >= selected_threshold
