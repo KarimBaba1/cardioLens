@@ -1,3 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+#Hui
+outputs/random_forest/
+*.joblib
