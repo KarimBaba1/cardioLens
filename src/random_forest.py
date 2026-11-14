@@ -1,4 +1,6 @@
 #%% import
+import matplotlib
+matplotlib.use("Agg")  # save plots to files; no blocking windows
 #model training and evaluation
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, cross_val_score
@@ -128,8 +130,8 @@ print("Best ROC-AUC score: ", rf_model_score)
 
 #%% threshold
 print("Validation threshold")
-thresholds = [0.5] 
-# thresholds = np.arange(0.1, 1.1, 0.05)
+# Same rule as Logistic Regression: pick the threshold with the best F1 on VALIDATION
+thresholds = np.round(np.arange(0.05, 0.95, 0.05), 2)
 val_probs = rf_model.predict_proba(x_val)[:, 1] #column 0 + column 1 = 1.0
 
 # best_threshold = None
@@ -144,14 +146,14 @@ for threshold in thresholds:
 
     # calculate metrics
     accuracy = accuracy_score(y_val, y_val_pred)
-    precision = precision_score(y_val, y_val_pred)
-    recall = recall_score(y_val, y_val_pred)
-    f1 = f1_score(y_val, y_val_pred)
+    precision = precision_score(y_val, y_val_pred, zero_division=0)
+    recall = recall_score(y_val, y_val_pred, zero_division=0)
+    f1 = f1_score(y_val, y_val_pred, zero_division=0)
     roc_auc = roc_auc_score(y_val, val_probs)
     
     # store results
     results.append({
-        # "Threshold": round(threshold, 2),
+        "Threshold": round(float(threshold), 2),
         "Val Accuracy" : round(accuracy, 3),
         "Val Precision": round(precision, 3),
         "Val Recall": round(recall, 3),
@@ -164,9 +166,10 @@ for threshold in thresholds:
     #     best_precision = precision
     #     best_threshold = float(threshold)
 
-best_threshold = float(threshold) #temp decision
-
 df_results = pd.DataFrame(results)
+best_threshold = float(df_results.loc[df_results["Val F1-score"].idxmax(), "Threshold"])
+print("Selected threshold (best validation F1):", best_threshold)
+y_val_pred = (val_probs >= best_threshold).astype(int)
 print("Val set")
 print(df_results.to_string(index=False)) #no index
 
@@ -179,7 +182,6 @@ ConfusionMatrixDisplay.from_predictions(
 )
 plt.title("Random Forest: confusion matrix on val set")
 plt.grid(False)
-plt.show()
 
 #TODO: Youden's J statistic or F2-score
 
@@ -195,14 +197,14 @@ test_probs = rf_model.predict_proba(x_test)[:, 1]
 y_test_pred = (test_probs >= best_threshold).astype(int)
 
 accuracy = accuracy_score(y_test, y_test_pred)
-precision = precision_score(y_test, y_test_pred)
-recall = recall_score(y_test, y_test_pred)
-f1 = f1_score(y_test, y_test_pred)
+precision = precision_score(y_test, y_test_pred, zero_division=0)
+recall = recall_score(y_test, y_test_pred, zero_division=0)
+f1 = f1_score(y_test, y_test_pred, zero_division=0)
 roc_auc = roc_auc_score(y_test, test_probs)
 cm = confusion_matrix(y_test, y_test_pred)
 
 print("Test set")
-# print(f"Threshold: {best_threshold:.2f}")
+print(f"Threshold: {best_threshold:.2f}")
 print(f"Test Accuracy: {accuracy:.3f}")
 print(f"Test Precision: {precision:.3f}")
 print(f"Test Recall: {recall:.3f}")
@@ -215,7 +217,6 @@ ConfusionMatrixDisplay.from_predictions(
 )
 plt.title("Random Forest: confusion matrix on test set")
 plt.grid(False)
-plt.show()
 
 #%% output ROC curve and confusion matrix
 from pathlib import Path
@@ -235,7 +236,6 @@ ax.plot([0, 1], [0, 1], "--", color="gray", label="Random baseline")
 ax.set_title("Random Forest ROC Curve")
 ax.legend(loc="lower right")
 fig.savefig(output_dir / "roc_curve_test.png", dpi=300, bbox_inches="tight")
-plt.show()
 plt.close(fig)
 
 #confusion matrix
@@ -250,7 +250,6 @@ ConfusionMatrixDisplay.from_predictions(
 )
 ax.set_title(f"Confusion Matrix (Test Set, threshold={best_threshold:.2f})")
 fig.savefig(output_dir / "confusion_matrix_test.png", dpi=300, bbox_inches="tight")
-plt.show()
 plt.close(fig)
 
 #TODO: Performance Across Patient Groups
@@ -319,3 +318,25 @@ joblib.dump(
     },
     model_dir / "random_forest.joblib",
 )
+
+#%% shared results (same format as results/logistic_regression/, committed to git)
+results_dir = Path(__file__).resolve().parents[1] / "results" / "random_forest"
+results_dir.mkdir(parents=True, exist_ok=True)
+
+pd.DataFrame({
+    "patient_id": test_df["patient_id"].to_numpy(),
+    "actual": y_test.to_numpy(),
+    "predicted": y_test_pred,
+    "probability": test_probs,
+}).to_csv(results_dir / "predictions.csv", index=False)
+
+pd.DataFrame([{
+    "model": "Random Forest",
+    "threshold": best_threshold,
+    "accuracy": accuracy,
+    "precision": precision,
+    "recall": recall,
+    "f1_score": f1,
+    "roc_auc": roc_auc,
+}]).to_csv(results_dir / "metrics.csv", index=False)
+print("Shared results saved to:", results_dir)
