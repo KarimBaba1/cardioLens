@@ -6,16 +6,41 @@ Academic prototype (UFCE3P-30-3, AY26/27) — **not for clinical use**.
 
 ## Quick start (web app)
 
+**1. Python environment (once)**
+
 ```bash
-python3 -m venv .venv
+python -m venv .venv
+# macOS / Linux
 .venv/bin/pip install -r requirements.txt
-./run_app.sh            # then open http://127.0.0.1:8000
+# Windows
+.venv\Scripts\pip install -r requirements.txt
 ```
 
-The plain-language summary uses a **local** LLM through [Ollama](https://ollama.com)
-(`qwen2.5:7b`, ~4.7 GB; `qwen2.5:3b` for slower laptops via `CARDIOLENS_LLM=qwen2.5:3b`).
-Install Ollama, then `ollama pull qwen2.5:7b`. Without Ollama the app still works and shows
-a template summary.
+**2. Local LLM for the summary (once, ~5 GB download)**
+
+Install [Ollama](https://ollama.com/download) (Windows, macOS or Linux), then:
+
+```bash
+ollama pull qwen2.5:7b      # or qwen2.5:3b on laptops with < 16 GB RAM
+```
+
+Optional — without it the app still works and shows a template summary.
+
+**3. Run**
+
+```bash
+# macOS / Linux
+./run_app.sh
+# Windows
+.venv\Scripts\python run_app.py
+```
+
+Open http://127.0.0.1:8000. The launcher retrains the app model (~1 s, deterministic) so it
+matches your scikit-learn version, and starts Ollama if needed. To use the smaller LLM:
+set `CARDIOLENS_LLM=qwen2.5:3b` before running.
+
+**Before a demo:** start the app a few minutes early — the first summary loads the LLM
+(~25 s); later ones take ~15 s on a laptop CPU.
 
 Demo shortcuts: `/?example=0|1|2` loads a dataset patient (lower / average / higher risk),
 add `&summary=1` to also write the summary; `/#evidence` opens the model comparison.
