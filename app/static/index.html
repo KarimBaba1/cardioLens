@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CardioLens · CHD Risk Screening</title>
+<script src="/static/vendor/tailwind.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'] },
+      colors: {
+        ink: '#0b2545', muted: '#5b6b82', line: '#e3e9f1', canvas: '#f3f6fa',
+        brand: { 50: '#ecfdfb', 100: '#cdf7f1', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 800: '#115e59' },
+        risk: { 50: '#fff1f2', 100: '#ffe4e6', 600: '#e11d48', 700: '#be123c' },
+      },
+      boxShadow: { card: '0 1px 2px rgba(11,37,69,.06), 0 4px 16px rgba(11,37,69,.05)' },
+    },
+  },
+};
+</script>
+<style>
+  body { background: #f3f6fa; }
+  .num::-webkit-inner-spin-button, .num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .num { -moz-appearance: textfield; }
+  .seg button[aria-pressed="true"] { background: #0f766e; color: #fff; border-color: #0f766e; }
+  input[type=range] { accent-color: #0f766e; }
+  .fade-in { animation: fade .25s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .spinner { width: 18px; height: 18px; border: 2px solid #cdf7f1; border-top-color: #0f766e; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ecg path { stroke-dasharray: 120; stroke-dashoffset: 120; animation: draw 2.4s ease-in-out infinite; }
+  @keyframes draw { 50% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -120; } }
+</style>
+</head>
+<body class="font-sans text-ink antialiased">
+
+<!-- ============================== header ============================== -->
+<header class="bg-white border-b border-line sticky top-0 z-20">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-brand-700 grid place-items-center">
+        <svg class="ecg" width="26" height="26" viewBox="0 0 32 32" fill="none">
+          <path d="M2 17h6l3-7 4 14 3-10 2 3h10" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <div class="font-semibold text-lg tracking-tight">CardioLens</div>
+        <div class="text-xs text-muted">10-year coronary heart disease risk screening</div>
+      </div>
+    </div>
+    <nav class="ml-auto flex gap-1 text-sm" id="tabs">
+      <button data-tab="assess" class="tab px-3 py-2 rounded-lg font-medium">Assessment</button>
+      <button data-tab="evidence" class="tab px-3 py-2 rounded-lg font-medium">Model evidence</button>
+      <button data-tab="about" class="tab px-3 py-2 rounded-lg font-medium">About &amp; limits</button>
+    </nav>
+  </div>
+</header>
+
+<div class="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs sm:text-sm">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex gap-2 items-start">
+    <svg class="w-4 h-4 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.26 3.1c.77-1.33 2.7-1.33 3.47 0l6.28 10.9c.77 1.33-.2 3-1.73 3H3.71c-1.54 0-2.5-1.67-1.73-3L8.26 3.1zM10 7a1 1 0 0 0-1 1v3a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clip-rule="evenodd"/></svg>
+    <span><b>Academic prototype — not for clinical use.</b> Estimates come from a statistical model trained on the Framingham Heart Study and are not a diagnosis or treatment recommendation.</span>
+  </div>
+</div>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+<!-- ============================== assessment ============================== -->
+<section id="tab-assess" class="tabpane">
+  <div class="grid lg:grid-cols-12 gap-6">
+
+    <!-- form -->
+    <div class="lg:col-span-5">
+      <div class="bg-white rounded-2xl shadow-card border border-line">
+        <div class="px-5 pt-5 pb-3 border-b border-line">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">Patient information</h2>
+            <span class="text-xs text-muted"><span class="text-risk-600">*</span> required</span>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2" id="examples"></div>
+        </div>
+        <form id="form" class="p-5 space-y-6" novalidate></form>
+        <div class="px-5 pb-5 flex gap-3">
+          <button id="assessBtn" class="flex-1 bg-brand-700 hover:bg-brand-800 text-white font-medium rounded-xl py-3 transition">Assess risk</button>
+          <button id="clearBtn" class="px-4 rounded-xl border border-line text-muted hover:bg-canvas">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- results -->
+    <div class="lg:col-span-7 space-y-6" id="results">
+      <div id="emptyState" class="bg-white rounded-2xl shadow-card border border-line p-10 text-center">
+        <div class="mx-auto w-14 h-14 rounded-2xl bg-brand-50 grid place-items-center mb-4">
+          <svg width="30" height="30" viewBox="0 0 32 32" fill="none"><path d="M16 27s-10-6.2-10-13.3A5.7 5.7 0 0 1 16 10a5.7 5.7 0 0 1 10 3.7C26 20.8 16 27 16 27z" stroke="#0f766e" stroke-width="2"/></svg>
+        </div>
+        <h3 class="font-semibold">No assessment yet</h3>
+        <p class="text-sm text-muted mt-1 max-w-sm mx-auto">Enter the patient's information or load a dataset example, then select <b>Assess risk</b>.</p>
+      </div>
+
+      <div id="resultCards" class="space-y-6 hidden">
+        <!-- risk -->
+        <div class="bg-white rounded-2xl shadow-card border border-line p-6 fade-in" id="riskCard">
+          <div class="flex flex-wrap items-start gap-6">
+            <div>
+              <div class="text-xs uppercase tracking-wider text-muted font-semibold">Estimated 10-year CHD risk</div>
+              <div class="flex items-baseline gap-2 mt-1">
+                <span id="riskValue" class="text-5xl font-semibold tabular-nums">–</span>
+              </div>
+              <div id="riskPill" class="mt-3 inline-flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full"></div>
+            </div>
+            <div class="ml-auto grid grid-cols-2 gap-3 text-sm min-w-[240px]">
+              <div class="rounded-xl bg-canvas p-3"><div class="text-muted text-xs">Study population average</div><div id="statAvg" class="font-semibold text-lg tabular-nums">–</div></div>
+              <div class="rounded-xl bg-canvas p-3"><div class="text-muted text-xs">Relative to average</div><div id="statRel" class="font-semibold text-lg tabular-nums">–</div></div>
+            </div>
+          </div>
+          <div class="mt-6">
+            <div class="relative h-3 rounded-full overflow-hidden" style="background:linear-gradient(90deg,#99f6e4 0%,#fde68a 40%,#fda4af 75%,#fb7185 100%)"></div>
+            <div class="relative h-8" id="ruler"></div>
+          </div>
+          <div class="mt-2 text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+            <span>Model: <b id="modelName" class="text-ink">Logistic Regression</b></span>
+            <span id="modelPerf"></span>
+          </div>
+          <ul id="warnings" class="mt-3 space-y-1 text-sm text-amber-800"></ul>
+        </div>
+
+        <!-- factors + what-if -->
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="bg-white rounded-2xl shadow-card border border-line p-6 fade-in">
+            <h3 class="font-semibold">What drives this estimate</h3>
+            <p class="text-xs text-muted mt-1">Influence of each factor compared with an average patient in the training data.</p>
+            <div class="mt-4 h-64"><canvas id="factorChart"></canvas></div>
+            <div class="mt-3 flex gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1"><i class="w-3 h-3 rounded-sm bg-risk-600 inline-block"></i>raises risk</span>
+              <span class="flex items-center gap-1"><i class="w-3 h-3 rounded-sm bg-brand-600 inline-block"></i>lowers risk</span>
+            </div>
+            <p class="text-[11px] text-muted mt-2">Associations learned by the model, not proven causes.</p>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-card border border-line p-6 fade-in">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold">What-if scenario</h3>
+              <button id="resetWhatIf" class="text-xs text-brand-700 hover:underline">Reset</button>
+            </div>
+            <p class="text-xs text-muted mt-1">Change modifiable factors and compare with the original estimate.</p>
+            <div id="whatIfControls" class="mt-4 space-y-4 text-sm"></div>
+            <div class="mt-5 space-y-2" id="whatIfBars"></div>
+            <p id="whatIfError" class="text-xs text-risk-700 mt-2"></p>
+            <p class="text-[11px] text-muted mt-3">Model-based scenario: it shows how the model responds, not the proven effect of quitting smoking or receiving treatment.</p>
+          </div>
+        </div>
+
+        <!-- summary -->
+        <div class="bg-white rounded-2xl shadow-card border border-line p-6 fade-in">
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <h3 class="font-semibold">Plain-language summary</h3>
+              <p class="text-xs text-muted mt-0.5">Written by a local language model from the results above. It cannot change the numbers.</p>
+            </div>
+            <div class="ml-auto flex items-center gap-3">
+              <span id="llmStatus" class="text-xs text-muted flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-gray-300 inline-block"></i>checking…</span>
+              <button id="summaryBtn" class="bg-ink hover:bg-black text-white text-sm font-medium rounded-xl px-4 py-2.5 transition">Write summary</button>
+            </div>
+          </div>
+          <div id="summaryBox" class="mt-4 hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== evidence ============================== -->
+<section id="tab-evidence" class="tabpane hidden space-y-6">
+  <div class="bg-white rounded-2xl shadow-card border border-line p-6">
+    <h2 class="font-semibold text-lg">How the approaches compare</h2>
+    <p class="text-sm text-muted mt-1 max-w-3xl">Every approach was scored on the same patients from the held-out test set — patients that no model saw during training or tuning. Thresholds were chosen on a separate validation set. <span id="commonNote"></span></p>
+    <div class="mt-5 overflow-x-auto">
+      <table class="w-full text-sm" id="compTable"></table>
+    </div>
+    <div class="grid lg:grid-cols-5 gap-6 mt-6">
+      <div class="lg:col-span-3 h-72"><canvas id="compChart"></canvas></div>
+      <div class="lg:col-span-2 rounded-xl bg-brand-50 border border-brand-100 p-5 text-sm space-y-2">
+        <div class="font-semibold text-brand-800">Why the app uses Logistic Regression</div>
+        <ul class="list-disc pl-5 space-y-1 text-ink/90">
+          <li>Highest ROC-AUC (ability to rank higher-risk patients above lower-risk ones), tied with the alternatives.</li>
+          <li>Simplest model, trains in seconds, and gives an exact explanation for each patient.</li>
+          <li>The fine-tuned LLM only matched it after ~100 minutes of GPU training; the zero-shot LLM was clearly weaker.</li>
+          <li>The differences between the top four are small relative to the test sample (few positive cases), so no approach is clearly superior.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-card border border-line p-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <div>
+        <h2 class="font-semibold text-lg">Performance across patient groups</h2>
+        <p class="text-sm text-muted mt-1">An overall score can hide weaker performance for some groups.</p>
+      </div>
+      <select id="groupModel" class="ml-auto border border-line rounded-lg px-3 py-2 text-sm bg-white"></select>
+    </div>
+    <div class="mt-5 overflow-x-auto"><table class="w-full text-sm" id="groupTable"></table></div>
+    <p class="text-xs text-muted mt-3">Groups with fewer than 20 positive cases are marked <b>limited data</b>; their results are unreliable. Differences between groups show where the model may be less reliable — they do not establish that it is clinically fair or safe.</p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-card border border-line p-6">
+    <h2 class="font-semibold text-lg">Metrics explained</h2>
+    <dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 text-sm">
+      <div class="rounded-xl bg-canvas p-4"><dt class="font-semibold">Recall</dt><dd class="text-muted mt-1">Of the patients who had a CHD event, the share the model flagged.</dd></div>
+      <div class="rounded-xl bg-canvas p-4"><dt class="font-semibold">Precision</dt><dd class="text-muted mt-1">Of the patients the model flagged, the share who had a CHD event.</dd></div>
+      <div class="rounded-xl bg-canvas p-4"><dt class="font-semibold">F1-score</dt><dd class="text-muted mt-1">Balance of precision and recall at the chosen threshold.</dd></div>
+      <div class="rounded-xl bg-canvas p-4"><dt class="font-semibold">ROC-AUC</dt><dd class="text-muted mt-1">How well risk scores rank patients, independent of threshold. 0.5 = chance, 1.0 = perfect.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ============================== about ============================== -->
+<section id="tab-about" class="tabpane hidden">
+  <div class="grid lg:grid-cols-2 gap-6 text-sm">
+    <div class="bg-white rounded-2xl shadow-card border border-line p-6 space-y-3">
+      <h2 class="font-semibold text-lg">Data &amp; method</h2>
+      <p><b>Data.</b> Framingham Heart Study teaching subset (Kaggle, 4,238 people, one row each). Target: <i>TenYearCHD</i> — whether a coronary heart disease event occurred within ten years (15% of people).</p>
+      <p><b>Splits.</b> Stratified 70 / 15 / 15 into training, validation and test sets with a fixed seed. Missing values are filled using training data only.</p>
+      <p><b>Approaches.</b> Logistic Regression, Random Forest, the clinical Framingham Risk Score (BMI version), and the Qwen2.5-7B-Instruct language model used zero-shot and after QLoRA fine-tuning.</p>
+      <p><b>Integrity.</b> Test labels never appeared in prompts, training or tuning. Thresholds were chosen on validation data.</p>
+      <p><b>Summary.</b> The plain-language summary is written by Qwen2.5-7B running locally (no data leaves the computer). Its output is checked: if it changes a number or gives treatment advice, a fixed template is shown instead.</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-card border border-line p-6 space-y-3">
+      <h2 class="font-semibold text-lg">Limitations &amp; responsible use</h2>
+      <ul class="list-disc pl-5 space-y-2">
+        <li>Moderate accuracy: ROC-AUC ≈ 0.69 on unseen patients. Many patients who later had an event are not flagged.</li>
+        <li>Historical US cohort; results may not transfer to other populations, including Hong Kong.</li>
+        <li>The Framingham baseline (BMI version) predicts general cardiovascular disease, broader than the CHD outcome used here.</li>
+        <li>Language-model results use a 300-patient test subset and a 4-bit compressed model; one training run only.</li>
+        <li>Factor influences and what-if results describe the model's associations, not causal effects of treatment or lifestyle change.</li>
+        <li>Group results reveal uneven performance but cannot prove fairness or safety.</li>
+        <li>Inputs are limited to the ranges seen in training (e.g. age 32–70).</li>
+      </ul>
+      <p class="pt-2 text-muted">CardioLens is an academic prototype (UFCE3P-30-3, AY26/27). It must not be used with real patients or as a replacement for medical diagnosis or treatment.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="max-w-7xl mx-auto px-4 sm:px-6 pb-8 text-xs text-muted">CardioLens · Academic prototype · Framingham Heart Study data</footer>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const pct = (p, d = 0) => (p * 100).toFixed(d) + '%';
+const api = async (path, body) => {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  return { ok: r.ok, status: r.status, data: await r.json() };
+};
+let SCHEMA, COMP, current = null, original = null, scenario = null, charts = {};
+
+/* ------------------------------ tabs ------------------------------ */
+function showTab(name) {
+  document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + name));
+  document.querySelectorAll('.tab').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.className = 'tab px-3 py-2 rounded-lg font-medium ' + (on ? 'bg-brand-50 text-brand-800' : 'text-muted hover:text-ink');
+  });
+  if (name === 'evidence' && COMP) renderEvidence();  // charts must be drawn while visible
+}
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+/* ------------------------------ form ------------------------------ */
+function buildForm() {
+  const form = $('#form'); form.innerHTML = '';
+  const groups = [...new Set(SCHEMA.fields.map(f => f.group))];
+  for (const g of groups) {
+    const sec = document.createElement('fieldset');
+    sec.innerHTML = `<legend class="text-xs uppercase tracking-wider text-muted font-semibold mb-3">${g}</legend><div class="grid sm:grid-cols-2 gap-x-4 gap-y-4"></div>`;
+    const grid = sec.querySelector('div');
+    for (const f of SCHEMA.fields.filter(f => f.group === g)) {
+      const wrap = document.createElement('div');
+      wrap.dataset.field = f.name;
+      const req = f.required ? '<span class="text-risk-600">*</span>' : '<span class="text-muted font-normal">(optional)</span>';
+      let input;
+      if (f.kind === 'binary') {
+        input = `<div class="seg flex rounded-xl overflow-hidden border border-line" data-name="${f.name}">
+          ${f.options.map((o, i) => `<button type="button" data-v="${i}" aria-pressed="false" class="flex-1 py-2 text-sm border-r last:border-r-0 border-line hover:bg-canvas transition">${o}</button>`).join('')}</div>`;
+      } else if (f.kind === 'select') {
+        input = `<select name="${f.name}" class="w-full border border-line rounded-xl px-3 py-2 bg-white text-sm h-[42px]"><option value="">Unknown</option>${f.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
+      } else {
+        const ph = f.range ? `${f.range[0]}–${f.range[1]}` : '';
+        input = `<div class="relative"><input name="${f.name}" type="number" step="any" inputmode="decimal" placeholder="${ph}" class="num w-full border border-line rounded-xl px-3 py-2 pr-16 text-sm h-[42px] focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500"><span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">${f.unit}</span></div>`;
+      }
+      wrap.innerHTML = `<label class="block text-sm font-medium mb-1.5">${f.label} ${req}</label>${input}<p class="err text-xs text-risk-700 mt-1 hidden"></p>`;
+      grid.appendChild(wrap);
+    }
+    form.appendChild(sec);
+  }
+  form.querySelectorAll('.seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.onclick = () => {
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    seg.dataset.value = b.dataset.v; clearErr(seg.dataset.name);
+  }));
+  form.querySelectorAll('input,select').forEach(i => i.oninput = () => clearErr(i.name));
+}
+function readForm() {
+  const v = {};
+  for (const f of SCHEMA.fields) {
+    if (f.kind === 'binary') { const s = $(`.seg[data-name="${f.name}"]`); v[f.name] = s.dataset.value ?? null; }
+    else { const el = $(`[name="${f.name}"]`); v[f.name] = el.value === '' ? null : el.value; }
+  }
+  return v;
+}
+function fillForm(values) {
+  for (const f of SCHEMA.fields) {
+    const val = values[f.name];
+    if (f.kind === 'binary') {
+      const s = $(`.seg[data-name="${f.name}"]`); s.dataset.value = val ?? '';
+      s.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(val) === b.dataset.v));
+      if (val == null) delete s.dataset.value;
+    } else { $(`[name="${f.name}"]`).value = val ?? ''; }
+    clearErr(f.name);
+  }
+}
+function clearErr(name) {
+  const w = $(`[data-field="${name}"]`); if (!w) return;
+  w.querySelector('.err').classList.add('hidden');
+  w.querySelectorAll('input,select,.seg').forEach(e => e.classList.remove('border-risk-600', 'ring-1', 'ring-risk-600'));
+}
+function showErrors(errors) {
+  let first = null;
+  for (const [name, msg] of Object.entries(errors)) {
+    const w = $(`[data-field="${name}"]`); if (!w) continue;
+    const e = w.querySelector('.err'); e.textContent = msg; e.classList.remove('hidden');
+    w.querySelectorAll('input,select,.seg').forEach(x => x.classList.add('border-risk-600', 'ring-1', 'ring-risk-600'));
+    first = first || w;
+  }
+  first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ------------------------------ assessment ------------------------------ */
+async function assess() {
+  const values = readForm();
+  const btn = $('#assessBtn'); btn.disabled = true; btn.textContent = 'Assessing…';
+  const r = await api('/api/predict', values);
+  btn.disabled = false; btn.textContent = 'Assess risk';
+  if (!r.ok) { showErrors(r.data.errors || {}); return; }
+  current = values; original = r.data; scenario = { ...values };
+  renderRisk(r.data); renderFactors(r.data); buildWhatIf(); renderWhatIf(r.data);
+  $('#summaryBox').classList.add('hidden'); $('#summaryBox').innerHTML = '';
+  $('#emptyState').classList.add('hidden'); $('#resultCards').classList.remove('hidden');
+  if (window.innerWidth < 1024) $('#results').scrollIntoView({ behavior: 'smooth' });
+}
+function renderRisk(d) {
+  $('#riskValue').textContent = pct(d.risk);
+  $('#riskValue').className = 'text-5xl font-semibold tabular-nums ' + (d.flagged ? 'text-risk-700' : 'text-brand-700');
+  const pill = $('#riskPill');
+  pill.className = 'mt-3 inline-flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full ' + (d.flagged ? 'bg-risk-50 text-risk-700' : 'bg-brand-50 text-brand-800');
+  pill.innerHTML = `<i class="w-2 h-2 rounded-full ${d.flagged ? 'bg-risk-600' : 'bg-brand-600'} inline-block"></i>` +
+    (d.flagged ? `At or above the ${pct(d.threshold)} screening threshold — consider follow-up` : `Below the ${pct(d.threshold)} screening threshold`);
+  $('#statAvg').textContent = pct(d.base_rate);
+  $('#statRel').textContent = (d.risk / d.base_rate).toFixed(1) + '×';
+  const max = 0.6, pos = p => Math.min(p, max) / max * 100;
+  $('#ruler').innerHTML = `
+    <div class="absolute top-0 flex flex-col items-end" style="right:${100 - pos(d.base_rate)}%"><i class="w-px h-2 bg-muted"></i><span class="text-[10px] text-muted whitespace-nowrap pr-1">avg ${pct(d.base_rate)}</span></div>
+    <div class="absolute top-0 flex flex-col items-start" style="left:${pos(d.threshold)}%"><i class="w-px h-2 bg-ink"></i><span class="text-[10px] text-ink font-medium whitespace-nowrap pl-1">threshold ${pct(d.threshold)}</span></div>
+    <div class="absolute -top-[22px] -translate-x-1/2" style="left:${pos(d.risk)}%"><div class="w-5 h-5 rounded-full border-[3px] border-white shadow ${d.flagged ? 'bg-risk-600' : 'bg-brand-700'}"></div></div>
+    <span class="absolute right-0 top-2 text-[10px] text-muted">60%+</span>`;
+  const lr = COMP?.common.find(m => m.model === 'logistic_regression');
+  $('#modelPerf').innerHTML = lr ? `ROC-AUC on unseen test patients: <b class="text-ink">${lr.roc_auc.toFixed(2)}</b> · recall ${pct(lr.recall)} at this threshold` : '';
+  $('#warnings').innerHTML = (d.warnings || []).map(w => `<li class="flex gap-2"><span>⚠</span><span>${w}</span></li>`).join('');
+}
+function renderFactors(d) {
+  const fs = d.factors.filter(f => Math.abs(f.contribution) >= 0.01).slice(0, 8);
+  const data = {
+    labels: fs.map(f => f.factor),
+    datasets: [{ data: fs.map(f => f.contribution), backgroundColor: fs.map(f => f.contribution > 0 ? '#e11d48' : '#0d9488'), borderRadius: 6, barThickness: 18 }],
+  };
+  charts.factor?.destroy();
+  charts.factor = new Chart($('#factorChart'), {
+    type: 'bar', data,
+    options: {
+      indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.raw > 0 ? 'raises' : 'lowers') + ' the estimate (' + c.raw.toFixed(2) + ' log-odds)' } } },
+      scales: { x: { grid: { color: '#eef2f7' }, ticks: { color: '#5b6b82' }, title: { display: true, text: '← lowers risk     influence     raises risk →', color: '#5b6b82', font: { size: 11 } } }, y: { grid: { display: false }, ticks: { color: '#0b2545' } } },
+    },
+  });
+}
+
+/* ------------------------------ what-if ------------------------------ */
+const WHATIF = [
+  { name: 'currentSmoker', label: 'Current smoker', kind: 'toggle' },
+  { name: 'cigsPerDay', label: 'Cigarettes per day', min: 0, max: 60, step: 1, unit: '' },
+  { name: 'sysBP', label: 'Systolic blood pressure', min: 90, max: 220, step: 1, unit: 'mmHg' },
+  { name: 'totChol', label: 'Total cholesterol', min: 120, max: 400, step: 1, unit: 'mg/dL' },
+  { name: 'BMI', label: 'Body-mass index', min: 17, max: 45, step: 0.1, unit: 'kg/m²' },
+];
+function buildWhatIf() {
+  const box = $('#whatIfControls'); box.innerHTML = '';
+  for (const c of WHATIF) {
+    const row = document.createElement('div');
+    if (c.kind === 'toggle') {
+      row.innerHTML = `<div class="flex items-center justify-between"><span>${c.label}</span>
+        <div class="seg flex rounded-lg overflow-hidden border border-line text-xs" data-w="${c.name}">
+        <button type="button" data-v="0" class="px-3 py-1.5 border-r border-line">No</button><button type="button" data-v="1" class="px-3 py-1.5">Yes</button></div></div>`;
+      row.querySelectorAll('button').forEach(b => b.onclick = () => {
+        scenario[c.name] = b.dataset.v;
+        if (b.dataset.v === '0') scenario.cigsPerDay = 0;
+        if (b.dataset.v === '1' && Number(scenario.cigsPerDay) === 0) scenario.cigsPerDay = 10;
+        syncWhatIf(); updateScenario();
+      });
+    } else {
+      row.innerHTML = `<div class="flex items-center justify-between mb-1"><span>${c.label}</span><span class="tabular-nums font-medium" data-out="${c.name}"></span></div>
+        <input type="range" class="w-full" min="${c.min}" max="${c.max}" step="${c.step}" data-w="${c.name}">`;
+      const r = row.querySelector('input');
+      r.oninput = () => {
+        scenario[c.name] = r.value;
+        if (c.name === 'cigsPerDay') scenario.currentSmoker = Number(r.value) > 0 ? '1' : '0';
+        syncWhatIf(); updateScenario();
+      };
+    }
+    box.appendChild(row);
+  }
+  syncWhatIf();
+}
+function syncWhatIf() {
+  for (const c of WHATIF) {
+    const v = scenario[c.name];
+    if (c.kind === 'toggle') {
+      $(`[data-w="${c.name}"]`).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(Number(v)) === b.dataset.v));
+    } else {
+      $(`input[data-w="${c.name}"]`).value = v;
+      const changed = Number(v) !== Number(current[c.name]);
+      $(`[data-out="${c.name}"]`).innerHTML = `${Number(v).toFixed(c.step < 1 ? 1 : 0)} ${c.unit}` + (changed ? ` <span class="text-xs text-muted">(was ${Number(current[c.name]).toFixed(c.step < 1 ? 1 : 0)})</span>` : '');
+    }
+  }
+}
+let wTimer;
+function updateScenario() {
+  clearTimeout(wTimer);
+  wTimer = setTimeout(async () => {
+    const r = await api('/api/predict', scenario);
+    $('#whatIfError').textContent = r.ok ? '' : Object.values(r.data.errors || {}).join(' ');
+    if (r.ok) renderWhatIf(r.data);
+  }, 150);
+}
+function renderWhatIf(s) {
+  const o = original, max = Math.max(0.5, o.risk, s.risk);
+  const bar = (label, p, cls) => `<div><div class="flex justify-between text-xs mb-1"><span class="text-muted">${label}</span><span class="font-semibold tabular-nums">${pct(p, 1)}</span></div>
+    <div class="h-3 rounded-full bg-canvas overflow-hidden"><div class="h-full rounded-full ${cls} transition-all duration-300" style="width:${p / max * 100}%"></div></div></div>`;
+  const diff = (s.risk - o.risk) * 100;
+  const tag = Math.abs(diff) < 0.05 ? '<span class="text-muted">no change</span>' :
+    `<span class="${diff < 0 ? 'text-brand-700' : 'text-risk-700'} font-semibold">${diff > 0 ? '+' : ''}${diff.toFixed(1)} percentage points</span>`;
+  $('#whatIfBars').innerHTML = bar('Original estimate', o.risk, 'bg-slate-400') + bar('Scenario', s.risk, s.flagged ? 'bg-risk-600' : 'bg-brand-600') +
+    `<div class="text-sm pt-1">Change: ${tag}</div>`;
+}
+$('#resetWhatIf').onclick = () => { scenario = { ...current }; syncWhatIf(); renderWhatIf(original); $('#whatIfError').textContent = ''; };
+
+/* ------------------------------ summary ------------------------------ */
+async function llmStatus() {
+  const s = (await api('/api/llm/status')).data;
+  const el = $('#llmStatus');
+  if (!s.online || !s.installed) { el.innerHTML = `<i class="w-2 h-2 rounded-full bg-amber-400 inline-block"></i>Local LLM offline — template will be used`; return; }
+  el.innerHTML = `<span class="spinner !w-3 !h-3"></span>Warming up ${s.model}…`;
+  const w = (await api('/api/llm/warmup', {})).data;
+  el.innerHTML = w.ready ? `<i class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></i>${s.model} ready (local)` : `<i class="w-2 h-2 rounded-full bg-amber-400 inline-block"></i>LLM not ready — template will be used`;
+}
+async function summary() {
+  const box = $('#summaryBox'), btn = $('#summaryBtn');
+  btn.disabled = true; btn.classList.add('opacity-60');
+  box.classList.remove('hidden');
+  let t = 0; const timer = setInterval(() => { t++; $('#sumSecs') && ($('#sumSecs').textContent = t + ' s'); }, 1000);
+  box.innerHTML = `<div class="flex items-center gap-3 text-sm text-muted rounded-xl bg-canvas p-4"><span class="spinner"></span>Writing summary with the local model… <span id="sumSecs" class="tabular-nums">0 s</span></div>`;
+  const r = await api('/api/summary', current);
+  clearInterval(timer); btn.disabled = false; btn.classList.remove('opacity-60');
+  if (!r.ok) { box.innerHTML = '<p class="text-sm text-risk-700">Please fix the patient information first.</p>'; return; }
+  const d = r.data;
+  const meta = d.source === 'llm'
+    ? `<span class="inline-flex items-center gap-1 text-emerald-700"><svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0z" clip-rule="evenodd"/></svg>Checked: numbers match the model</span> · Generated locally by ${d.model} in ${d.seconds} s`
+    : `<span class="text-amber-700">Template summary</span> · ${d.reason}`;
+  box.innerHTML = `<blockquote class="fade-in rounded-xl border-l-4 border-brand-600 bg-brand-50/60 p-5 text-[15px] leading-relaxed">${d.text}</blockquote><div class="text-xs text-muted mt-2">${meta}</div>`;
+}
+
+/* ------------------------------ evidence ------------------------------ */
+function renderEvidence() {
+  const rows = COMP.common, chosen = COMP.chosen;
+  const n = rows[0]?.n, pos = rows[0]?.positives;
+  $('#commonNote').textContent = `Shared test patients: ${n} (${pos} with a CHD event).`;
+  const best = k => Math.max(...rows.map(r => r[k]));
+  const cell = (r, k, f = v => v.toFixed(3)) => `<td class="py-3 px-3 text-right tabular-nums ${r[k] === best(k) ? 'font-semibold text-brand-800' : ''}">${f(r[k])}</td>`;
+  const order = ['logistic_regression', 'random_forest', 'framingham_score', 'llm_zero_shot', 'llm_finetuned'];
+  const sorted = [...rows].sort((a, b) => order.indexOf(a.model) - order.indexOf(b.model));
+  $('#compTable').innerHTML = `<thead><tr class="text-xs uppercase tracking-wider text-muted border-b border-line">
+      <th class="py-2 px-3 text-left">Approach</th><th class="py-2 px-3 text-right">Threshold</th><th class="py-2 px-3 text-right">Precision</th><th class="py-2 px-3 text-right">Recall</th><th class="py-2 px-3 text-right">F1</th><th class="py-2 px-3 text-right">ROC-AUC</th></tr></thead>
+    <tbody>${sorted.map(r => `<tr class="border-b border-line last:border-0 ${r.model === chosen ? 'bg-brand-50/60' : ''}">
+      <td class="py-3 px-3 font-medium">${r.name}${r.model === chosen ? ' <span class="ml-2 text-[11px] font-semibold text-brand-800 bg-brand-100 rounded-full px-2 py-0.5">used in app</span>' : ''}</td>
+      <td class="py-3 px-3 text-right tabular-nums text-muted">${r.threshold.toFixed(2)}</td>${cell(r, 'precision')}${cell(r, 'recall')}${cell(r, 'f1')}${cell(r, 'roc_auc')}</tr>`).join('')}</tbody>`;
+  charts.comp?.destroy();
+  charts.comp = new Chart($('#compChart'), {
+    type: 'bar',
+    data: { labels: sorted.map(r => ({ logistic_regression: ['Logistic', 'Regression'], random_forest: ['Random', 'Forest'], framingham_score: ['Framingham', 'score'], llm_zero_shot: ['LLM', 'zero-shot'], llm_finetuned: ['LLM', 'fine-tuned'] })[r.model] || r.name),
+      datasets: [
+        { label: 'ROC-AUC', data: sorted.map(r => r.roc_auc), backgroundColor: '#0f766e', borderRadius: 6 },
+        { label: 'Recall', data: sorted.map(r => r.recall), backgroundColor: '#5eead4', borderRadius: 6 },
+        { label: 'F1', data: sorted.map(r => r.f1), backgroundColor: '#94a3b8', borderRadius: 6 }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, color: '#5b6b82' } } },
+      scales: { y: { min: 0, max: 1, grid: { color: '#eef2f7' }, ticks: { color: '#5b6b82' } }, x: { grid: { display: false }, ticks: { color: '#0b2545', font: { size: 11 }, maxRotation: 0 } } } },
+  });
+  const sel = $('#groupModel');
+  sel.innerHTML = sorted.map(r => `<option value="${r.model}">${r.name}</option>`).join('');
+  sel.value = chosen; sel.onchange = renderGroups; renderGroups();
+}
+function renderGroups() {
+  const m = $('#groupModel').value;
+  const rows = COMP.groups.filter(g => g.model === m);
+  const dimName = { sex: 'Sex', age_group: 'Age group' };
+  $('#groupTable').innerHTML = `<thead><tr class="text-xs uppercase tracking-wider text-muted border-b border-line">
+    <th class="py-2 px-3 text-left">Group</th><th class="py-2 px-3 text-right">Patients</th><th class="py-2 px-3 text-right">CHD events</th><th class="py-2 px-3 text-right">Precision</th><th class="py-2 px-3 text-right">Recall</th><th class="py-2 px-3 text-right">F1</th><th class="py-2 px-3 text-right">ROC-AUC</th><th class="py-2 px-3"></th></tr></thead>
+    <tbody>${rows.map(r => `<tr class="border-b border-line last:border-0">
+      <td class="py-3 px-3"><span class="text-muted">${dimName[r.dimension]}:</span> <b class="font-medium">${r.group[0].toUpperCase() + r.group.slice(1)}</b></td>
+      <td class="py-3 px-3 text-right tabular-nums">${r.n}</td><td class="py-3 px-3 text-right tabular-nums">${r.positives}</td>
+      <td class="py-3 px-3 text-right tabular-nums">${r.precision.toFixed(2)}</td><td class="py-3 px-3 text-right tabular-nums">${r.recall.toFixed(2)}</td>
+      <td class="py-3 px-3 text-right tabular-nums">${r.f1.toFixed(2)}</td><td class="py-3 px-3 text-right tabular-nums">${r.roc_auc == null ? '–' : r.roc_auc.toFixed(2)}</td>
+      <td class="py-3 px-3 text-right">${r.reliable ? '' : '<span class="text-[11px] font-semibold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5 whitespace-nowrap">limited data</span>'}</td></tr>`).join('')}</tbody>`;
+}
+
+/* ------------------------------ init ------------------------------ */
+async function init() {
+  showTab('assess');
+  SCHEMA = (await api('/api/schema')).data;
+  buildForm();
+  const ex = (await api('/api/examples')).data;
+  $('#examples').innerHTML = '<span class="text-xs text-muted self-center mr-1">Dataset examples:</span>' +
+    ex.map((e, i) => `<button type="button" data-i="${i}" class="text-xs px-3 py-1.5 rounded-full border border-line hover:border-brand-500 hover:text-brand-800 transition">${e.name.replace(' example', '')}</button>`).join('');
+  $('#examples').querySelectorAll('button').forEach(b => b.onclick = () => { fillForm(ex[b.dataset.i].values); assess(); });
+  COMP = (await api('/api/comparison')).data;
+  renderEvidence();
+  $('#assessBtn').onclick = assess;
+  $('#clearBtn').onclick = () => { fillForm({}); $('#resultCards').classList.add('hidden'); $('#emptyState').classList.remove('hidden'); };
+  $('#summaryBtn').onclick = summary;
+  await llmStatus();
+  // Demo shortcuts: ?example=0|1|2 loads a dataset patient; &summary=1 also writes the summary; #evidence / #about open a tab
+  const q = new URLSearchParams(location.search);
+  if (q.has('example')) { fillForm(ex[Number(q.get('example'))].values); await assess(); if (q.get('summary') === '1') await summary(); }
+  if (location.hash) showTab(location.hash.slice(1));
+}
+init();
+</script>
+</body>
+</html>
