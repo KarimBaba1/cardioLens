@@ -107,7 +107,11 @@ tailwind.config = {
       <div id="resultCards" class="space-y-6 hidden">
         <!-- risk -->
         <div class="bg-white rounded-2xl shadow-card border border-line p-6 fade-in" id="riskCard">
-          <div class="flex flex-wrap items-start gap-6">
+          <div id="scopeNote" class="hidden mb-5 rounded-xl border border-risk-100 bg-risk-50 p-4 text-sm text-risk-700 flex gap-3">
+            <svg class="w-5 h-5 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0zm-8-5a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V6a1 1 0 0 0-1-1zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clip-rule="evenodd"/></svg>
+            <div><div class="font-semibold">Outside this tool's scope — refer for clinical review</div><div id="scopeText" class="mt-0.5"></div></div>
+          </div>
+          <div id="riskMain" class="flex flex-wrap items-start gap-6">
             <div>
               <div class="text-xs uppercase tracking-wider text-muted font-semibold">Estimated 10-year CHD risk</div>
               <div class="flex items-baseline gap-2 mt-1">
@@ -120,7 +124,7 @@ tailwind.config = {
               <div class="rounded-xl bg-canvas p-3"><div class="text-muted text-xs">Relative to average</div><div id="statRel" class="font-semibold text-lg tabular-nums">–</div></div>
             </div>
           </div>
-          <div class="mt-6">
+          <div class="mt-6" id="riskScale">
             <div class="relative h-3 rounded-full overflow-hidden" style="background:linear-gradient(90deg,#99f6e4 0%,#fde68a 40%,#fda4af 75%,#fb7185 100%)"></div>
             <div class="relative h-8" id="ruler"></div>
           </div>
@@ -243,6 +247,8 @@ tailwind.config = {
         <li>Factor influences and what-if results describe the model's associations, not causal effects of treatment or lifestyle change.</li>
         <li>Group results reveal uneven performance but cannot prove fairness or safety.</li>
         <li>Inputs are limited to the ranges seen in training (e.g. age 32–70).</li>
+        <li>Designed for people <b>without</b> existing cardiovascular disease: for a patient with a previous stroke the app shows a scope notice instead of a screening result (only 18 such patients in the training data).</li>
+        <li>Correlated inputs share effects: e.g. diabetes adds little when glucose is normal, and a low blood pressure achieved with medication still lowers the estimate. Rare combinations are flagged as less reliable.</li>
       </ul>
       <p class="pt-2 text-muted">CardioLens is an academic prototype (UFCE3P-30-3, AY26/27). It must not be used with real patients or as a replacement for medical diagnosis or treatment.</p>
     </div>
@@ -363,12 +369,17 @@ async function assess() {
   if (window.innerWidth < 1024) $('#results').scrollIntoView({ behavior: 'smooth' });
 }
 function renderRisk(d) {
+  $('#scopeNote').classList.toggle('hidden', !d.out_of_scope);
+  $('#scopeText').textContent = d.scope_note || '';
+  $('#riskMain').classList.toggle('opacity-40', !!d.out_of_scope);
+  $('#riskScale').classList.toggle('opacity-40', !!d.out_of_scope);
   $('#riskValue').textContent = pct(d.risk);
   $('#riskValue').className = 'text-5xl font-semibold tabular-nums ' + (d.flagged ? 'text-risk-700' : 'text-brand-700');
   const pill = $('#riskPill');
   pill.className = 'mt-3 inline-flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full ' + (d.flagged ? 'bg-risk-50 text-risk-700' : 'bg-brand-50 text-brand-800');
   pill.innerHTML = `<i class="w-2 h-2 rounded-full ${d.flagged ? 'bg-risk-600' : 'bg-brand-600'} inline-block"></i>` +
-    (d.flagged ? `At or above the ${pct(d.threshold)} screening threshold — consider follow-up` : `Below the ${pct(d.threshold)} screening threshold`);
+    (d.out_of_scope ? 'For reference only — the screening estimate does not apply'
+      : d.flagged ? `At or above the ${pct(d.threshold)} screening threshold — consider follow-up` : `Below the ${pct(d.threshold)} screening threshold`);
   $('#statAvg').textContent = pct(d.base_rate);
   $('#statRel').textContent = (d.risk / d.base_rate).toFixed(1) + '×';
   const max = 0.6, pos = p => Math.min(p, max) / max * 100;
@@ -499,6 +510,7 @@ async function summary() {
   const d = r.data;
   const meta = d.source === 'llm'
     ? `<span class="inline-flex items-center gap-1 text-emerald-700"><svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0z" clip-rule="evenodd"/></svg>Checked: numbers match the model</span> · Generated locally by ${d.model} in ${d.seconds} s`
+    : d.source === 'scope' ? `<span class="text-risk-700">Scope notice</span> · the screening estimate does not apply, so no model summary is written`
     : `<span class="text-amber-700">Template summary</span> · ${d.reason}`;
   box.innerHTML = `<blockquote class="fade-in rounded-xl border-l-4 border-brand-600 bg-brand-50/60 p-5 text-[15px] leading-relaxed">${d.text}</blockquote><div class="text-xs text-muted mt-2">${meta}</div>`;
 }

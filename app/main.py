@@ -81,6 +81,18 @@ FACTOR_GROUPS = {
     "Education": ["education"],
 }
 
+SCOPE_NOTE = (
+    "This patient has had a stroke, so they already have cardiovascular disease. "
+    "CardioLens is a screening tool for people without existing disease, so its "
+    "estimate does not apply. Please refer the patient for clinical review."
+)
+SCOPE_SUMMARY = (
+    "You have had a stroke in the past, which means you already have a form of "
+    "cardiovascular disease. This screening tool is designed for people who do not, "
+    "so the estimate it shows does not apply to you and should not be relied on. "
+    "Please discuss your heart health with your doctor, who can assess your risk properly."
+)
+
 MODEL_NAMES = {
     "logistic_regression": "Logistic Regression",
     "random_forest": "Random Forest",
@@ -130,6 +142,10 @@ def validate(raw: dict) -> tuple[dict, dict, list]:
             errors["cigsPerDay"] = "Set cigarettes to 0, or mark the patient as a current smoker."
         if clean["currentSmoker"] == 1 and clean["cigsPerDay"] == 0:
             warnings.append("Marked as a smoker with 0 cigarettes per day; please check.")
+        pp = clean["sysBP"] - clean["diaBP"]
+        if pp < 0.25 * clean["sysBP"]:
+            warnings.append(f"Systolic and diastolic pressure are unusually close ({pp:g} mmHg "
+                            "apart); please check the readings.")
         unusual = [LABELS[n] for n, (lo, hi) in TYPICAL.items()
                    if clean.get(n) is not None and not lo <= clean[n] <= hi]
         if unusual:
@@ -181,6 +197,11 @@ def predict(clean: dict) -> dict:
         "model": CARD["model"],
         "factors": factors,
         "detail": detail,
+        # Screening scores are for people WITHOUT established cardiovascular disease.
+        # A previous stroke means the patient already has it (and only 18 training
+        # patients had one), so the estimate is shown for reference only.
+        "out_of_scope": clean.get("prevalentStroke") == 1,
+        "scope_note": SCOPE_NOTE if clean.get("prevalentStroke") == 1 else None,
     }
 
 
@@ -286,6 +307,9 @@ def api_summary(raw: dict):
     if errors:
         return JSONResponse({"errors": errors}, status_code=422)
     pred = predict(clean)  # recomputed server-side: the LLM never sees client numbers
+    if pred["out_of_scope"]:
+        return {"text": SCOPE_SUMMARY, "source": "scope",
+                "reason": "outside the tool's scope (previous stroke)", "seconds": 0}
     t0 = time.time()
     try:
         r = ollama("/api/generate", {
