@@ -1,0 +1,2 @@
+model,threshold,n_test_scored,n_test_excluded_missing_inputs,accuracy,precision,recall,f1_score,roc_auc
+Framingham Risk Score (BMI),0.12,628,8,0.6656050955414012,0.24553571428571427,0.5729166666666666,0.34375,0.6902999686716793

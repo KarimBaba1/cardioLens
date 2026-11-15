@@ -5,3 +5,4 @@ __pycache__/
 #Hui
 outputs/random_forest/
 *.joblib
+outputs/
