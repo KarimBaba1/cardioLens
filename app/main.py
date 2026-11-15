@@ -36,6 +36,7 @@ CARD = json.loads((ROOT / "models" / "model_card.json").read_text())
 THRESHOLD = CARD["threshold"]
 BASE_RATE = CARD["base_rate"]
 RANGES = CARD["supported_ranges"]
+TYPICAL = CARD.get("typical_ranges", {})
 COEF = MODEL.named_steps["classifier"].coef_[0]
 INTERCEPT = float(MODEL.named_steps["classifier"].intercept_[0])
 FEATURE_ORDER = CARD["feature_order"]
@@ -79,6 +80,18 @@ FACTOR_GROUPS = {
     "Heart rate": ["heartRate"],
     "Education": ["education"],
 }
+
+SCOPE_NOTE = (
+    "This patient has had a stroke, so they already have cardiovascular disease. "
+    "CardioLens is a screening tool for people without existing disease, so its "
+    "estimate does not apply. Please refer the patient for clinical review."
+)
+SCOPE_SUMMARY = (
+    "You have had a stroke in the past, which means you already have a form of "
+    "cardiovascular disease. This screening tool is designed for people who do not, "
+    "so the estimate it shows does not apply to you and should not be relied on. "
+    "Please discuss your heart health with your doctor, who can assess your risk properly."
+)
 
 MODEL_NAMES = {
     "logistic_regression": "Logistic Regression",
@@ -129,6 +142,15 @@ def validate(raw: dict) -> tuple[dict, dict, list]:
             errors["cigsPerDay"] = "Set cigarettes to 0, or mark the patient as a current smoker."
         if clean["currentSmoker"] == 1 and clean["cigsPerDay"] == 0:
             warnings.append("Marked as a smoker with 0 cigarettes per day; please check.")
+        pp = clean["sysBP"] - clean["diaBP"]
+        if pp < 0.25 * clean["sysBP"]:
+            warnings.append(f"Systolic and diastolic pressure are unusually close ({pp:g} mmHg "
+                            "apart); please check the readings.")
+        unusual = [LABELS[n] for n, (lo, hi) in TYPICAL.items()
+                   if clean.get(n) is not None and not lo <= clean[n] <= hi]
+        if unusual:
+            warnings.append(f"Unusual value for {', '.join(unusual).lower()}: very few patients "
+                            "like this in the training data, so the estimate is less reliable.")
         for opt in ("education", "heartRate", "glucose"):
             if clean.get(opt) is None:
                 warnings.append(f"{LABELS[opt]} not given: a typical value from the "
@@ -153,11 +175,17 @@ def predict(clean: dict) -> dict:
     # Related inputs are summed into one clinical factor: e.g. the model splits
     # smoking across "current smoker" and "cigarettes per day" (correlated), so
     # showing them separately could wrongly suggest smoking lowers risk.
-    factors = sorted(
-        ({"factor": name, "inputs": feats,
-          "contribution": float(sum(contrib[f] for f in feats))}
-         for name, feats in FACTOR_GROUPS.items()),
-        key=lambda d: -abs(d["contribution"]))
+    factors = []
+    for name, feats in FACTOR_GROUPS.items():
+        parts = [{"label": LABELS[f], "contribution": float(contrib[f])} for f in feats]
+        net = float(sum(p["contribution"] for p in parts))
+        # parts that pull in opposite directions and cancel (e.g. low systolic BP
+        # vs BP medication) are flagged so the chart does not hide them
+        offset = len(parts) > 1 and abs(net) < 0.05 and max(abs(p["contribution"]) for p in parts) >= 0.1
+        factors.append({"factor": name, "inputs": feats, "contribution": net,
+                        "parts": parts, "offset": offset})
+    factors.sort(key=lambda d: -max(abs(d["contribution"]),
+                                    max(abs(p["contribution"]) for p in d["parts"]) if d["offset"] else 0))
     detail = [{"feature": n, "label": LABELS[n], "value": clean.get(n),
                "contribution": float(c)} for n, c in contrib.items()]
     return {
@@ -169,6 +197,11 @@ def predict(clean: dict) -> dict:
         "model": CARD["model"],
         "factors": factors,
         "detail": detail,
+        # Screening scores are for people WITHOUT established cardiovascular disease.
+        # A previous stroke means the patient already has it (and only 18 training
+        # patients had one), so the estimate is shown for reference only.
+        "out_of_scope": clean.get("prevalentStroke") == 1,
+        "scope_note": SCOPE_NOTE if clean.get("prevalentStroke") == 1 else None,
     }
 
 
@@ -274,6 +307,9 @@ def api_summary(raw: dict):
     if errors:
         return JSONResponse({"errors": errors}, status_code=422)
     pred = predict(clean)  # recomputed server-side: the LLM never sees client numbers
+    if pred["out_of_scope"]:
+        return {"text": SCOPE_SUMMARY, "source": "scope",
+                "reason": "outside the tool's scope (previous stroke)", "seconds": 0}
     t0 = time.time()
     try:
         r = ollama("/api/generate", {
@@ -348,4 +384,5 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # no-store: after an update the browser always loads the current page
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})

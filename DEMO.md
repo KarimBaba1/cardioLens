@@ -73,6 +73,12 @@ checks the text: if it changes a number or gives treatment advice, it shows a sa
 
 **E. Higher-risk example (tab 2, 30 s)** — **40%**, driven by blood pressure (195 mmHg) and age (63).
 
+**F. Scope check (optional, 30 s)** — back on the live patient, set *Previous stroke* to **Yes** and
+assess again. A red notice appears: *"Outside this tool's scope — refer for clinical review"*, and
+the number is greyed out. Say: *"Screening scores are for people without existing heart or
+vascular disease. A stroke means they already have it — and only 18 such patients were in our
+training data — so the app refuses to treat the number as a screening result."*
+
 ## Likely questions
 
 | Question | Answer |
@@ -84,6 +90,9 @@ checks the text: if it changes a number or gives treatment advice, it shows a sa
 | Framingham predicts CHD? | The BMI version predicts general cardiovascular disease — broader than our target; we state this as a limitation. |
 | Would this work in Hong Kong? | Unknown: historical US cohort. It would need validation on local data. |
 | Why does smoking show as one factor? | The model splits smoking across two correlated inputs; we combine them so the explanation is not misleading. |
+| Why does diabetes add so little for some patients? | Diabetes and glucose are correlated (0.61), so the model shares the effect between them. A diabetic with normal glucose is rare in the data (16% of diabetics), so the flag alone adds little. The app warns when values are unusual; better handling is future work. |
+| A low blood pressure on medication lowers the risk? | Yes — the model treats the reading like anyone else's. The clinical Framingham formula uses separate weights for treated pressure; adding that is future work. |
+| Why not just retrain to fix that? | Alternatives we tried scored the same overall (cross-validated ROC-AUC ≈ 0.72): the data has too few such patients to tell which is right. |
 
 ## If something goes wrong
 
