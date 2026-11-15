@@ -36,6 +36,7 @@ CARD = json.loads((ROOT / "models" / "model_card.json").read_text())
 THRESHOLD = CARD["threshold"]
 BASE_RATE = CARD["base_rate"]
 RANGES = CARD["supported_ranges"]
+TYPICAL = CARD.get("typical_ranges", {})
 COEF = MODEL.named_steps["classifier"].coef_[0]
 INTERCEPT = float(MODEL.named_steps["classifier"].intercept_[0])
 FEATURE_ORDER = CARD["feature_order"]
@@ -129,6 +130,11 @@ def validate(raw: dict) -> tuple[dict, dict, list]:
             errors["cigsPerDay"] = "Set cigarettes to 0, or mark the patient as a current smoker."
         if clean["currentSmoker"] == 1 and clean["cigsPerDay"] == 0:
             warnings.append("Marked as a smoker with 0 cigarettes per day; please check.")
+        unusual = [LABELS[n] for n, (lo, hi) in TYPICAL.items()
+                   if clean.get(n) is not None and not lo <= clean[n] <= hi]
+        if unusual:
+            warnings.append(f"Unusual value for {', '.join(unusual).lower()}: very few patients "
+                            "like this in the training data, so the estimate is less reliable.")
         for opt in ("education", "heartRate", "glucose"):
             if clean.get(opt) is None:
                 warnings.append(f"{LABELS[opt]} not given: a typical value from the "
@@ -153,11 +159,17 @@ def predict(clean: dict) -> dict:
     # Related inputs are summed into one clinical factor: e.g. the model splits
     # smoking across "current smoker" and "cigarettes per day" (correlated), so
     # showing them separately could wrongly suggest smoking lowers risk.
-    factors = sorted(
-        ({"factor": name, "inputs": feats,
-          "contribution": float(sum(contrib[f] for f in feats))}
-         for name, feats in FACTOR_GROUPS.items()),
-        key=lambda d: -abs(d["contribution"]))
+    factors = []
+    for name, feats in FACTOR_GROUPS.items():
+        parts = [{"label": LABELS[f], "contribution": float(contrib[f])} for f in feats]
+        net = float(sum(p["contribution"] for p in parts))
+        # parts that pull in opposite directions and cancel (e.g. low systolic BP
+        # vs BP medication) are flagged so the chart does not hide them
+        offset = len(parts) > 1 and abs(net) < 0.05 and max(abs(p["contribution"]) for p in parts) >= 0.1
+        factors.append({"factor": name, "inputs": feats, "contribution": net,
+                        "parts": parts, "offset": offset})
+    factors.sort(key=lambda d: -max(abs(d["contribution"]),
+                                    max(abs(p["contribution"]) for p in d["parts"]) if d["offset"] else 0))
     detail = [{"feature": n, "label": LABELS[n], "value": clean.get(n),
                "contribution": float(c)} for n, c in contrib.items()]
     return {

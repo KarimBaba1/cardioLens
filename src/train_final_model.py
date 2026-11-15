@@ -50,6 +50,10 @@ def main() -> None:
         # the model only saw values in these ranges; inputs outside are rejected
         "supported_ranges": {c: [float(train[c].min()), float(train[c].max())]
                              for c in NUMERIC_FEATURES},
+        # 98% of training patients fall inside these; values outside are rare,
+        # so the app warns that the estimate is less reliable there
+        "typical_ranges": {c: [float(train[c].quantile(0.01)), float(train[c].quantile(0.99))]
+                           for c in NUMERIC_FEATURES},
         "validation": {
             "roc_auc": float(roc_auc_score(val[TARGET], val_p)),
             "precision": float(precision_score(val[TARGET], val_pred, zero_division=0)),
