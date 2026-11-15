@@ -360,4 +360,5 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # no-store: after an update the browser always loads the current page
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
